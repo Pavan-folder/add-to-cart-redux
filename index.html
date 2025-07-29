@@ -3,12 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Enhanced Smooth Add to Cart App</title>
+  <title>Advanced E-Commerce Store</title>
   <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
   <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.development.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.development.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.20.6/babel.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/axios@1.4.0/dist/axios.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lodash@4.17.21/lodash.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@reduxjs/toolkit@1.9.5/dist/redux-toolkit.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/react-redux@8.1.1/dist/react-redux.min.js"></script>
 </head>
@@ -17,209 +19,840 @@
   <script type="text/babel">
     const { createSlice, configureStore } = window.RTK;
     const { Provider, useDispatch, useSelector } = window.ReactRedux;
-    const { useState, useEffect } = React;
+    const { useState, useEffect, useCallback, useMemo } = React;
+    const _ = window._;
 
+    // Enhanced product slice with categories and sorting
     const productsSlice = createSlice({
       name: 'products',
-      initialState: { items: [], filtered: [], loading: false, error: null, selectedProduct: null, lastUpdate: null, realTimeEnabled: true },
+      initialState: { 
+        items: [], 
+        filtered: [], 
+        loading: false, 
+        error: null, 
+        selectedProduct: null, 
+        lastUpdate: null, 
+        realTimeEnabled: true,
+        categories: [],
+        selectedCategory: 'all',
+        sortBy: 'default',
+        favorites: [],
+        viewed: []
+      },
       reducers: {
-        setProducts: (s, a) => { s.items = a.payload; s.filtered = a.payload; },
+        setProducts: (s, a) => { 
+          s.items = a.payload; 
+          s.filtered = a.payload;
+          s.categories = ['all', ..._.uniq(a.payload.map(p => p.category))];
+        },
         setLoading: (s, a) => { s.loading = a.payload; },
         setError: (s, a) => { s.error = a.payload; },
-        filter: (s, a) => { s.filtered = s.items.filter(p => p.title.toLowerCase().includes(a.payload.toLowerCase())); },
-        setSelectedProduct: (s, a) => { s.selectedProduct = a.payload; },
+        filter: (s, a) => { 
+          const query = a.payload.query.toLowerCase();
+          const category = a.payload.category;
+          const sortBy = a.payload.sortBy;
+          
+          let filtered = s.items;
+          
+          // Filter by category
+          if (category !== 'all') {
+            filtered = filtered.filter(p => p.category === category);
+          }
+          
+          // Filter by search query
+          if (query) {
+            filtered = filtered.filter(p => 
+              p.title.toLowerCase().includes(query) || 
+              p.description.toLowerCase().includes(query) ||
+              p.brand.toLowerCase().includes(query)
+            );
+          }
+          
+          // Sort products
+          switch(sortBy) {
+            case 'price-asc':
+              filtered = _.sortBy(filtered, 'price');
+              break;
+            case 'price-desc':
+              filtered = _.sortBy(filtered, 'price').reverse();
+              break;
+            case 'rating':
+              filtered = _.sortBy(filtered, 'rating').reverse();
+              break;
+            case 'title':
+              filtered = _.sortBy(filtered, 'title');
+              break;
+            default:
+              // Default sorting (keep original order)
+              break;
+          }
+          
+          s.filtered = filtered;
+          s.selectedCategory = category;
+          s.sortBy = sortBy;
+        },
+        setSelectedProduct: (s, a) => { 
+          s.selectedProduct = a.payload;
+          if (a.payload && !s.viewed.some(p => p.id === a.payload.id)) {
+            s.viewed = [a.payload, ...s.viewed].slice(0, 5);
+          }
+        },
         setLastUpdate: (s, a) => { s.lastUpdate = a.payload; },
-        toggleRealTime: (s) => { s.realTimeEnabled = !s.realTimeEnabled; }
+        toggleRealTime: (s) => { s.realTimeEnabled = !s.realTimeEnabled; },
+        toggleFavorite: (s, a) => {
+          const productId = a.payload;
+          if (s.favorites.includes(productId)) {
+            s.favorites = s.favorites.filter(id => id !== productId);
+          } else {
+            s.favorites = [...s.favorites, productId];
+          }
+        }
       }
     });
 
+    // Enhanced cart slice with quantity adjustment
     const cartSlice = createSlice({
       name: 'cart',
-      initialState: { items: [], count: 0 },
+      initialState: { 
+        items: [], 
+        count: 0,
+        isOpen: false,
+        discount: 0,
+        shippingCost: 5.99
+      },
       reducers: {
         add: (s, a) => {
           const p = a.payload;
           const e = s.items.find(i => i.id === p.id);
-          e ? e.quantity++ : s.items.push({ ...p, quantity: 1 });
+          if (e) {
+            e.quantity++;
+          } else {
+            s.items.push({ ...p, quantity: 1 });
+          }
           s.count++;
         },
         remove: (s, a) => {
           const id = a.payload;
           const i = s.items.find(i => i.id === id);
-          if (i) { s.count -= i.quantity; s.items = s.items.filter(i => i.id !== id); }
+          if (i) { 
+            s.count -= i.quantity; 
+            s.items = s.items.filter(i => i.id !== id); 
+          }
+        },
+        increaseQuantity: (s, a) => {
+          const id = a.payload;
+          const item = s.items.find(i => i.id === id);
+          if (item) {
+            item.quantity++;
+            s.count++;
+          }
+        },
+        decreaseQuantity: (s, a) => {
+          const id = a.payload;
+          const item = s.items.find(i => i.id === id);
+          if (item && item.quantity > 1) {
+            item.quantity--;
+            s.count--;
+          }
+        },
+        toggleCart: (s) => {
+          s.isOpen = !s.isOpen;
+        },
+        applyDiscount: (s, a) => {
+          s.discount = a.payload;
+        },
+        clearCart: (s) => {
+          s.items = [];
+          s.count = 0;
+          s.discount = 0;
         }
       }
     });
 
-    const store = configureStore({ reducer: { products: productsSlice.reducer, cart: cartSlice.reducer } });
-    const { setProducts, setLoading, setError, filter, setSelectedProduct, setLastUpdate, toggleRealTime } = productsSlice.actions;
-    const { add, remove } = cartSlice.actions;
+    const store = configureStore({ 
+      reducer: { 
+        products: productsSlice.reducer, 
+        cart: cartSlice.reducer 
+      } 
+    });
+    
+    const { 
+      setProducts, 
+      setLoading, 
+      setError, 
+      filter, 
+      setSelectedProduct, 
+      setLastUpdate, 
+      toggleRealTime,
+      toggleFavorite
+    } = productsSlice.actions;
+    
+    const { 
+      add, 
+      remove, 
+      increaseQuantity, 
+      decreaseQuantity, 
+      toggleCart,
+      applyDiscount,
+      clearCart
+    } = cartSlice.actions;
 
+    // Notification component
+    const Notification = ({ message, type, onClose }) => {
+      useEffect(() => {
+        const timer = setTimeout(() => {
+          onClose();
+        }, 3000);
+        return () => clearTimeout(timer);
+      }, [onClose]);
+      
+      const bgColor = type === 'success' ? 'bg-green-500' : 
+                     type === 'error' ? 'bg-red-500' : 'bg-blue-500';
+      
+      return (
+        <div className={`fixed top-4 left-1/2 transform -translate-x-1/2 ${bgColor} text-white px-4 py-2 rounded shadow-lg flex items-center`}>
+          <span>{message}</span>
+          <button onClick={onClose} className="ml-4">
+            <i className="fas fa-times"></i>
+          </button>
+        </div>
+      );
+    };
+
+    // Product card with more features
     const ProductCard = ({ product }) => {
       const dispatch = useDispatch();
+      const { favorites } = useSelector(s => s.products);
+      const isFavorite = favorites.includes(product.id);
+      
       const handleAdd = () => {
         dispatch(add(product));
-        alert(`${product.title} added to cart!`);
       };
+      
       const handleViewDetails = () => dispatch(setSelectedProduct(product));
+      const handleToggleFavorite = (e) => {
+        e.stopPropagation();
+        dispatch(toggleFavorite(product.id));
+      };
+      
       return (
-        <div className="border rounded-lg p-4 bg-white shadow hover:shadow-lg flex flex-col items-center transition-opacity duration-500 ease-in-out">
-          <img src={product.thumbnail} alt={product.title} className="w-32 h-32 object-cover mb-2 rounded" />
-          <h3 className="text-lg font-semibold text-center">{product.title}</h3>
-          <p className="text-gray-600">${product.price.toFixed(2)}</p>
-          <div className="flex space-x-2 mt-2">
-            <button onClick={handleAdd} className="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600">
-              Add to Cart
-            </button>
-            <button onClick={handleViewDetails} className="bg-green-500 text-white px-3 py-1 rounded hover:bg-green-600">
-              View Details
-            </button>
+        <div className="border rounded-lg p-4 bg-white shadow hover:shadow-lg flex flex-col items-center transition-all duration-300 hover:-translate-y-1 relative">
+          <button 
+            onClick={handleToggleFavorite}
+            className="absolute top-2 right-2 text-xl"
+          >
+            <i className={`${isFavorite ? 'fas text-red-500' : 'far'} fa-heart`}></i>
+          </button>
+          
+          <img 
+            src={product.thumbnail} 
+            alt={product.title} 
+            className="w-32 h-32 object-cover mb-2 rounded hover:scale-105 transition-transform"
+          />
+          
+          <div className="w-full">
+            <h3 className="text-lg font-semibold text-center">{product.title}</h3>
+            <div className="flex justify-between items-center mt-2">
+              <p className="text-gray-600">${product.price.toFixed(2)}</p>
+              <div className="flex items-center">
+                <i className="fas fa-star text-yellow-400 mr-1"></i>
+                <span>{product.rating.toFixed(1)}</span>
+              </div>
+            </div>
+            
+            <div className="flex space-x-2 mt-3 justify-center">
+              <button 
+                onClick={handleAdd} 
+                className="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600 flex items-center"
+              >
+                <i className="fas fa-cart-plus mr-1"></i>
+                Add
+              </button>
+              <button 
+                onClick={handleViewDetails} 
+                className="bg-green-500 text-white px-3 py-1 rounded hover:bg-green-600 flex items-center"
+              >
+                <i className="fas fa-info-circle mr-1"></i>
+                Details
+              </button>
+            </div>
           </div>
         </div>
       );
     };
 
+    // Enhanced product details modal
     const ProductDetailsModal = () => {
       const { selectedProduct } = useSelector(s => s.products);
       const dispatch = useDispatch();
+      
       if (!selectedProduct) return null;
+      
       return (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-lg shadow-lg w-11/12 max-w-md">
-            <h2 className="text-2xl font-bold mb-4">{selectedProduct.title}</h2>
-            <img src={selectedProduct.thumbnail} alt={selectedProduct.title} className="w-full h-48 object-cover mb-4 rounded" />
-            <p className="text-gray-700 mb-2">Price: ${selectedProduct.price.toFixed(2)}</p>
-            <p className="text-gray-700 mb-4">Description: {selectedProduct.description || 'No description available'}</p>
-            <button onClick={() => dispatch(setSelectedProduct(null))} className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600">
-              Close
-            </button>
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+          onClick={() => dispatch(setSelectedProduct(null))}
+        >
+          <div 
+            className="bg-white p-6 rounded-lg shadow-lg w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex justify-between items-start mb-4">
+              <h2 className="text-2xl font-bold">{selectedProduct.title}</h2>
+              <button 
+                onClick={() => dispatch(setSelectedProduct(null))}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <i className="fas fa-times text-xl"></i>
+              </button>
+            </div>
+            
+            <div className="md:flex gap-6">
+              <div className="md:w-1/2 mb-4 md:mb-0">
+                <img 
+                  src={selectedProduct.thumbnail} 
+                  alt={selectedProduct.title} 
+                  className="w-full h-64 object-contain mb-4 rounded-lg border"
+                />
+                <div className="grid grid-cols-4 gap-2">
+                  {selectedProduct.images.slice(0, 4).map((img, i) => (
+                    <img 
+                      key={i}
+                      src={img} 
+                      alt={`${selectedProduct.title} ${i+1}`}
+                      className="h-16 object-cover rounded border cursor-pointer hover:opacity-80"
+                      onClick={() => {
+                        const newProduct = {...selectedProduct, thumbnail: img};
+                        dispatch(setSelectedProduct(newProduct));
+                      }}
+                    />
+                  ))}
+                </div>
+              </div>
+              
+              <div className="md:w-1/2">
+                <div className="mb-4">
+                  <p className="text-gray-700 mb-2">
+                    <span className="font-semibold">Brand:</span> {selectedProduct.brand}
+                  </p>
+                  <p className="text-gray-700 mb-2">
+                    <span className="font-semibold">Category:</span> {selectedProduct.category}
+                  </p>
+                  <p className="text-2xl font-bold text-blue-600 mb-4">
+                    ${selectedProduct.price.toFixed(2)}
+                    {selectedProduct.discountPercentage > 0 && (
+                      <span className="ml-2 text-sm text-red-500 line-through">
+                        ${(selectedProduct.price * (1 + selectedProduct.discountPercentage/100)).toFixed(2)}
+                      </span>
+                    )}
+                  </p>
+                  <div className="flex items-center mb-4">
+                    <div className="flex mr-2">
+                      {[...Array(5)].map((_, i) => (
+                        <i 
+                          key={i}
+                          className={`fas fa-star ${i < Math.floor(selectedProduct.rating) ? 'text-yellow-400' : 'text-gray-300'}`}
+                        ></i>
+                      ))}
+                    </div>
+                    <span className="text-gray-600">{selectedProduct.rating.toFixed(1)} ({selectedProduct.stock} in stock)</span>
+                  </div>
+                </div>
+                
+                <p className="text-gray-700 mb-6">
+                  <span className="font-semibold">Description:</span> {selectedProduct.description}
+                </p>
+                
+                <div className="flex space-x-4">
+                  <button 
+                    onClick={() => {
+                      dispatch(add(selectedProduct));
+                      dispatch(setSelectedProduct(null));
+                    }}
+                    className="bg-blue-500 text-white px-6 py-2 rounded hover:bg-blue-600 flex items-center flex-1 justify-center"
+                  >
+                    <i className="fas fa-cart-plus mr-2"></i>
+                    Add to Cart
+                  </button>
+                  <button className="bg-gray-200 text-gray-800 px-4 py-2 rounded hover:bg-gray-300">
+                    <i className="fas fa-share-alt"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       );
     };
 
+    // Enhanced cart modal with checkout functionality
     const CartModal = () => {
-      const items = useSelector(s => s.cart.items);
+      const { items, isOpen, discount, shippingCost } = useSelector(s => s.cart);
       const dispatch = useDispatch();
-      const [show, setShow] = useState(false);
-      const total = items.reduce((sum, i) => sum + i.price * i.quantity, 0).toFixed(2);
+      const [couponCode, setCouponCode] = useState('');
+      const [notification, setNotification] = useState(null);
+      
+      const subtotal = useMemo(() => 
+        items.reduce((sum, i) => sum + i.price * i.quantity, 0), 
+        [items]
+      );
+      
+      const total = useMemo(() => {
+        const discounted = subtotal * (1 - discount/100);
+        return (discounted + shippingCost).toFixed(2);
+      }, [subtotal, discount, shippingCost]);
+      
+      const handleApplyCoupon = () => {
+        if (couponCode === 'DISCOUNT10') {
+          dispatch(applyDiscount(10));
+          setNotification({
+            message: '10% discount applied!',
+            type: 'success'
+          });
+        } else {
+          setNotification({
+            message: 'Invalid coupon code',
+            type: 'error'
+          });
+        }
+      };
+      
+      const handleCheckout = () => {
+        setNotification({
+          message: 'Order placed successfully!',
+          type: 'success'
+        });
+        setTimeout(() => {
+          dispatch(clearCart());
+          dispatch(toggleCart());
+        }, 2000);
+      };
+      
+      if (!isOpen) return null;
+      
       return (
-        <>
-          <button onClick={() => setShow(!show)} className="fixed top-4 right-4 bg-blue-500 text-white px-4 py-2 rounded-full shadow hover:bg-blue-600">
-            Cart ({items.reduce((t, i) => t + i.quantity, 0)})
-          </button>
-          {show && (
-            <div className="fixed top-16 right-4 bg-white border shadow-lg p-4 rounded w-80 max-h-96 overflow-y-auto z-50">
-              <h2 className="text-xl font-bold mb-2">Cart Items</h2>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          {notification && (
+            <Notification 
+              message={notification.message} 
+              type={notification.type} 
+              onClose={() => setNotification(null)} 
+            />
+          )}
+          
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-md max-h-[90vh] flex flex-col">
+            <div className="p-4 border-b flex justify-between items-center">
+              <h2 className="text-xl font-bold">Your Cart ({items.reduce((t, i) => t + i.quantity, 0)})</h2>
+              <button 
+                onClick={() => dispatch(toggleCart())}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <i className="fas fa-times text-xl"></i>
+              </button>
+            </div>
+            
+            <div className="p-4 overflow-y-auto flex-grow">
               {items.length === 0 ? (
-                <p className="text-gray-600">Cart is empty.</p>
+                <div className="text-center py-8">
+                  <i className="fas fa-shopping-cart text-4xl text-gray-300 mb-4"></i>
+                  <p className="text-gray-600">Your cart is empty</p>
+                  <button 
+                    onClick={() => dispatch(toggleCart())}
+                    className="mt-4 bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+                  >
+                    Continue Shopping
+                  </button>
+                </div>
               ) : (
                 <>
                   {items.map(i => (
-                    <div key={i.id} className="flex justify-between items-center mb-2 border-b pb-2">
-                      <span>{i.title} x {i.quantity}</span>
-                      <button onClick={() => dispatch(remove(i.id))} className="text-red-500 hover:text-red-700">Remove</button>
+                    <div key={i.id} className="flex justify-between items-center mb-4 pb-4 border-b">
+                      <div className="flex items-center">
+                        <img 
+                          src={i.thumbnail} 
+                          alt={i.title} 
+                          className="w-16 h-16 object-cover rounded mr-4"
+                        />
+                        <div>
+                          <h3 className="font-medium">{i.title}</h3>
+                          <p className="text-gray-600">${i.price.toFixed(2)}</p>
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-center">
+                        <button 
+                          onClick={() => dispatch(decreaseQuantity(i.id))}
+                          className="w-8 h-8 flex items-center justify-center border rounded-l"
+                        >
+                          <i className="fas fa-minus"></i>
+                        </button>
+                        <span className="w-8 h-8 flex items-center justify-center border-t border-b">
+                          {i.quantity}
+                        </span>
+                        <button 
+                          onClick={() => dispatch(increaseQuantity(i.id))}
+                          className="w-8 h-8 flex items-center justify-center border rounded-r"
+                        >
+                          <i className="fas fa-plus"></i>
+                        </button>
+                      </div>
+                      
+                      <div className="flex items-center">
+                        <span className="mr-4">${(i.price * i.quantity).toFixed(2)}</span>
+                        <button 
+                          onClick={() => dispatch(remove(i.id))}
+                          className="text-red-500 hover:text-red-700"
+                        >
+                          <i className="fas fa-trash"></i>
+                        </button>
+                      </div>
                     </div>
                   ))}
-                  <div className="mt-4 font-bold">Total: ${total}</div>
                 </>
               )}
             </div>
-          )}
-        </>
-      );
-    };
-
-    const LoadingSpinner = () => (
-      <div className="flex justify-center items-center">
-        <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-      </div>
-    );
-
-    const RealTimeToggle = () => {
-      const dispatch = useDispatch();
-      const { realTimeEnabled } = useSelector(s => s.products);
-      return (
-        <div className="text-center mt-4">
-          <button
-            onClick={() => dispatch(toggleRealTime())}
-            className="bg-gray-300 text-black px-4 py-2 rounded hover:bg-gray-400"
-          >
-            {realTimeEnabled ? 'Disable Real-Time Updates' : 'Enable Real-Time Updates'}
-          </button>
+            
+            {items.length > 0 && (
+              <div className="p-4 border-t">
+                <div className="mb-4">
+                  <div className="flex justify-between mb-2">
+                    <span>Subtotal:</span>
+                    <span>${subtotal.toFixed(2)}</span>
+                  </div>
+                  {discount > 0 && (
+                    <div className="flex justify-between mb-2 text-green-600">
+                      <span>Discount ({discount}%):</span>
+                      <span>-${(subtotal * discount/100).toFixed(2)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between mb-2">
+                    <span>Shipping:</span>
+                    <span>${shippingCost.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between font-bold text-lg">
+                    <span>Total:</span>
+                    <span>${total}</span>
+                  </div>
+                </div>
+                
+                <div className="flex mb-4">
+                  <input
+                    type="text"
+                    value={couponCode}
+                    onChange={(e) => setCouponCode(e.target.value)}
+                    placeholder="Coupon code"
+                    className="flex-grow p-2 border rounded-l focus:outline-none"
+                  />
+                  <button 
+                    onClick={handleApplyCoupon}
+                    className="bg-gray-200 px-4 py-2 rounded-r hover:bg-gray-300"
+                  >
+                    Apply
+                  </button>
+                </div>
+                
+                <button 
+                  onClick={handleCheckout}
+                  className="w-full bg-green-500 text-white py-3 rounded hover:bg-green-600 font-medium"
+                >
+                  Proceed to Checkout
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       );
     };
 
+    // Loading spinner with more options
+    const LoadingSpinner = ({ size = 'md', color = 'blue' }) => {
+      const sizeClasses = {
+        sm: 'w-6 h-6',
+        md: 'w-8 h-8',
+        lg: 'w-12 h-12'
+      };
+      
+      const colorClasses = {
+        blue: 'border-blue-500',
+        green: 'border-green-500',
+        gray: 'border-gray-500'
+      };
+      
+      return (
+        <div className="flex justify-center items-center">
+          <div className={`${sizeClasses[size]} ${colorClasses[color]} border-4 border-t-transparent rounded-full animate-spin`}></div>
+        </div>
+      );
+    };
+
+    // Real-time toggle with more options
+    const RealTimeToggle = () => {
+      const dispatch = useDispatch();
+      const { realTimeEnabled } = useSelector(s => s.products);
+      
+      return (
+        <div className="flex items-center justify-center space-x-2 mb-4">
+          <span className="text-sm text-gray-600">Real-Time Updates:</span>
+          <button
+            onClick={() => dispatch(toggleRealTime())}
+            className={`relative inline-flex items-center h-6 rounded-full w-11 transition-colors focus:outline-none ${realTimeEnabled ? 'bg-blue-500' : 'bg-gray-300'}`}
+          >
+            <span
+              className={`inline-block w-4 h-4 transform transition-transform bg-white rounded-full ${realTimeEnabled ? 'translate-x-6' : 'translate-x-1'}`}
+            />
+          </button>
+          <span className="text-sm font-medium">
+            {realTimeEnabled ? 'ON' : 'OFF'}
+          </span>
+        </div>
+      );
+    };
+
+    // Recently viewed products component
+    const RecentlyViewed = () => {
+      const { viewed } = useSelector(s => s.products);
+      const dispatch = useDispatch();
+      
+      if (viewed.length === 0) return null;
+      
+      return (
+        <div className="mt-8">
+          <h2 className="text-xl font-bold mb-4">Recently Viewed</h2>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+            {viewed.map(product => (
+              <div 
+                key={product.id}
+                onClick={() => dispatch(setSelectedProduct(product))}
+                className="border rounded p-2 cursor-pointer hover:shadow-md transition-shadow"
+              >
+                <img 
+                  src={product.thumbnail} 
+                  alt={product.title} 
+                  className="w-full h-20 object-contain mb-1"
+                />
+                <p className="text-sm truncate">{product.title}</p>
+                <p className="text-xs text-gray-600">${product.price.toFixed(2)}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    };
+
+    // Main App component with enhanced features
     const App = () => {
       const dispatch = useDispatch();
-      const { filtered, loading, error, lastUpdate, items, realTimeEnabled } = useSelector(s => s.products);
+      const { 
+        filtered, 
+        loading, 
+        error, 
+        lastUpdate, 
+        items, 
+        realTimeEnabled,
+        categories,
+        selectedCategory,
+        sortBy
+      } = useSelector(s => s.products);
+      
+      const { count, isOpen } = useSelector(s => s.cart);
+      
       const [query, setQuery] = useState('');
       const [prevItems, setPrevItems] = useState([]);
+      const [searchDebounced, setSearchDebounced] = useState('');
 
+      // Debounce search input
       useEffect(() => {
-        const fetchProducts = async () => {
-          if (!realTimeEnabled) return;
-          dispatch(setLoading(true));
-          try {
-            const res = await axios.get('https://dummyjson.com/products');
-            const newProducts = res.data.products;
-            if (JSON.stringify(newProducts) !== JSON.stringify(prevItems)) {
-              dispatch(setProducts(newProducts));
-              setPrevItems(newProducts);
-              dispatch(setLastUpdate(new Date().toLocaleTimeString()));
-            }
-          } catch (e) {
-            dispatch(setError(e.message));
-          } finally {
-            dispatch(setLoading(false));
-          }
+        const handler = setTimeout(() => {
+          setSearchDebounced(query);
+        }, 300);
+        
+        return () => {
+          clearTimeout(handler);
         };
-
+      }, [query]);
+      
+      // Fetch products with enhanced error handling
+      const fetchProducts = useCallback(async () => {
+        if (!realTimeEnabled) return;
+        
+        dispatch(setLoading(true));
+        try {
+          const res = await axios.get('https://dummyjson.com/products');
+          const newProducts = res.data.products;
+          
+          if (JSON.stringify(newProducts) !== JSON.stringify(prevItems)) {
+            dispatch(setProducts(newProducts));
+            setPrevItems(newProducts);
+            dispatch(setLastUpdate(new Date().toLocaleTimeString()));
+          }
+        } catch (e) {
+          console.error('Failed to fetch products:', e);
+          dispatch(setError(e.response?.data?.message || e.message || 'Failed to fetch products'));
+        } finally {
+          dispatch(setLoading(false));
+        }
+      }, [dispatch, prevItems, realTimeEnabled]);
+      
+      // Initial fetch and real-time updates
+      useEffect(() => {
         fetchProducts();
+        
         if (realTimeEnabled) {
           const interval = setInterval(fetchProducts, 5000);
           return () => clearInterval(interval);
         }
-      }, [dispatch, prevItems, realTimeEnabled]);
-
-      const handleSearch = (e) => {
-        setQuery(e.target.value);
-        dispatch(filter(e.target.value));
-      };
+      }, [fetchProducts, realTimeEnabled]);
+      
+      // Apply filters whenever search, category or sort changes
+      useEffect(() => {
+        dispatch(filter({
+          query: searchDebounced,
+          category: selectedCategory,
+          sortBy: sortBy
+        }));
+      }, [dispatch, searchDebounced, selectedCategory, sortBy]);
 
       return (
-        <div className="container mx-auto p-4 bg-gray-100 min-h-screen">
-          <h1 className="text-3xl font-bold text-center mb-6 text-gray-800">Product Store</h1>
-          <CartModal />
-          {lastUpdate && <p className="text-center text-sm text-gray-500">Last updated: {lastUpdate}</p>}
-          <RealTimeToggle />
-          <div className="mb-4 max-w-md mx-auto">
-            <input
-              type="text"
-              value={query}
-              onChange={handleSearch}
-              placeholder="Search products..."
-              className="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-          {loading && (
-            <div className="text-center">
-              <LoadingSpinner />
-              <p className="text-gray-600 mt-2">Loading products...</p>
+        <div className="container mx-auto p-4 bg-gray-50 min-h-screen">
+          <header className="bg-white shadow-sm rounded-lg p-4 mb-6">
+            <div className="flex justify-between items-center">
+              <h1 className="text-3xl font-bold text-gray-800">
+                <i className="fas fa-store mr-2 text-blue-500"></i>
+                ShopEase
+              </h1>
+              
+              <button 
+                onClick={() => dispatch(toggleCart())}
+                className="relative bg-blue-500 text-white px-4 py-2 rounded-full shadow hover:bg-blue-600 flex items-center"
+              >
+                <i className="fas fa-shopping-cart mr-2"></i>
+                Cart
+                {count > 0 && (
+                  <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                    {count}
+                  </span>
+                )}
+              </button>
             </div>
-          )}
-          {error && <p className="text-center text-red-500">Error: {error}</p>}
-          {!loading && filtered.length === 0 && !error && <p className="text-center text-gray-600">No products found.</p>}
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {filtered.map(p => <ProductCard key={p.id} product={p} />)}
+            
+            {lastUpdate && (
+              <p className="text-right text-xs text-gray-500 mt-1">
+                Last updated: {lastUpdate}
+              </p>
+            )}
+          </header>
+          
+          <RealTimeToggle />
+          
+          <div className="bg-white rounded-lg shadow-sm p-4 mb-6">
+            <div className="flex flex-col md:flex-row md:items-center gap-4 mb-4">
+              <div className="flex-grow">
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    placeholder="Search products..."
+                    className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 pl-10"
+                  />
+                  <i className="fas fa-search absolute left-3 top-3.5 text-gray-400"></i>
+                </div>
+              </div>
+              
+              <div className="flex gap-2">
+                <select
+                  value={selectedCategory}
+                  onChange={(e) => dispatch(filter({
+                    query: searchDebounced,
+                    category: e.target.value,
+                    sortBy: sortBy
+                  }))}
+                  className="p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {categories.map(category => (
+                    <option key={category} value={category}>
+                      {_.capitalize(category)}
+                    </option>
+                  ))}
+                </select>
+                
+                <select
+                  value={sortBy}
+                  onChange={(e) => dispatch(filter({
+                    query: searchDebounced,
+                    category: selectedCategory,
+                    sortBy: e.target.value
+                  }))}
+                  className="p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="default">Default</option>
+                  <option value="price-asc">Price: Low to High</option>
+                  <option value="price-desc">Price: High to Low</option>
+                  <option value="rating">Highest Rating</option>
+                  <option value="title">Name</option>
+                </select>
+              </div>
+            </div>
+            
+            {loading && (
+              <div className="text-center py-8">
+                <LoadingSpinner size="lg" color="blue" />
+                <p className="text-gray-600 mt-4">Loading products...</p>
+              </div>
+            )}
+            
+            {error && (
+              <div className="text-center py-8 text-red-500">
+                <i className="fas fa-exclamation-circle text-2xl mb-2"></i>
+                <p>{error}</p>
+                <button
+                  onClick={fetchProducts}
+                  className="mt-4 bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+                >
+                  Retry
+                </button>
+              </div>
+            )}
+            
+            {!loading && filtered.length === 0 && !error && (
+              <div className="text-center py-8">
+                <i className="fas fa-search text-3xl text-gray-300 mb-2"></i>
+                <p className="text-gray-600">No products found matching your criteria</p>
+              </div>
+            )}
           </div>
+          
+          {!loading && !error && filtered.length > 0 && (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
+                {filtered.map(p => <ProductCard key={p.id} product={p} />)}
+              </div>
+              
+              <RecentlyViewed />
+            </>
+          )}
+          
           <ProductDetailsModal />
+          <CartModal />
+          
+          <footer className="mt-12 text-center text-gray-500 text-sm">
+            <p>© 2023 ShopEase. All rights reserved.</p>
+            <div className="flex justify-center space-x-4 mt-2">
+              <a href="#" className="hover:text-blue-500"><i className="fab fa-facebook"></i></a>
+              <a href="#" className="hover:text-blue-400"><i className="fab fa-twitter"></i></a>
+              <a href="#" className="hover:text-pink-500"><i className="fab fa-instagram"></i></a>
+            </div>
+          </footer>
         </div>
       );
     };
 
-    ReactDOM.render(<Provider store={store}><App /></Provider>, document.getElementById('root'));
+    ReactDOM.render(
+      <Provider store={store}>
+        <App />
+      </Provider>, 
+      document.getElementById('root')
+    );
   </script>
 </body>
 </html>
