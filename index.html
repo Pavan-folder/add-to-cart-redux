@@ -3,20 +3,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Add to Cart App</title>
-  <!-- TailwindCSS (Note: CDN for demo; install locally for production) -->
+  <title>Enhanced Add to Cart App</title>
   <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet" />
-  <!-- React -->
   <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.development.js"></script>
-  <!-- React DOM -->
   <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.development.js"></script>
-  <!-- Babel -->
   <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.20.6/babel.min.js"></script>
-  <!-- Axios -->
   <script src="https://cdn.jsdelivr.net/npm/axios@1.4.0/dist/axios.min.js"></script>
-  <!-- Redux Toolkit -->
   <script src="https://cdn.jsdelivr.net/npm/@reduxjs/toolkit@1.9.5/dist/redux-toolkit.umd.min.js"></script>
-  <!-- React-Redux -->
   <script src="https://cdn.jsdelivr.net/npm/react-redux@8.1.1/dist/react-redux.min.js"></script>
 </head>
 <body>
@@ -28,12 +21,13 @@
 
     const productsSlice = createSlice({
       name: 'products',
-      initialState: { items: [], filtered: [], loading: false, error: null },
+      initialState: { items: [], filtered: [], loading: false, error: null, selectedProduct: null },
       reducers: {
         setProducts: (s, a) => { s.items = a.payload; s.filtered = a.payload; },
         setLoading: (s, a) => { s.loading = a.payload; },
         setError: (s, a) => { s.error = a.payload; },
-        filter: (s, a) => { s.filtered = s.items.filter(p => p.title.toLowerCase().includes(a.payload.toLowerCase())); }
+        filter: (s, a) => { s.filtered = s.items.filter(p => p.title.toLowerCase().includes(a.payload.toLowerCase())); },
+        setSelectedProduct: (s, a) => { s.selectedProduct = a.payload; }
       }
     });
 
@@ -56,20 +50,48 @@
     });
 
     const store = configureStore({ reducer: { products: productsSlice.reducer, cart: cartSlice.reducer } });
-    const { setProducts, setLoading, setError, filter } = productsSlice.actions;
+    const { setProducts, setLoading, setError, filter, setSelectedProduct } = productsSlice.actions;
     const { add, remove } = cartSlice.actions;
 
     const ProductCard = ({ product }) => {
       const dispatch = useDispatch();
+      const handleAdd = () => {
+        dispatch(add(product));
+        alert(`${product.title} added to cart!`);
+      };
+      const handleViewDetails = () => dispatch(setSelectedProduct(product));
       return (
-        <div className="border rounded p-4 bg-white shadow hover:shadow-lg flex flex-col items-center">
+        <div className="border rounded-lg p-4 bg-white shadow hover:shadow-lg flex flex-col items-center">
           <img src={product.thumbnail} alt={product.title} className="w-32 h-32 object-cover mb-2 rounded" />
           <h3 className="text-lg font-semibold text-center">{product.title}</h3>
           <p className="text-gray-600">${product.price.toFixed(2)}</p>
-          <button onClick={() => { dispatch(add(product)); alert(`${product.title} added to cart!`); }}
-            className="mt-2 bg-blue-500 text-white px-4 py-1 rounded hover:bg-blue-600">
-            Add to Cart
-          </button>
+          <div className="flex space-x-2 mt-2">
+            <button onClick={handleAdd} className="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600">
+              Add to Cart
+            </button>
+            <button onClick={handleViewDetails} className="bg-green-500 text-white px-3 py-1 rounded hover:bg-green-600">
+              View Details
+            </button>
+          </div>
+        </div>
+      );
+    };
+
+    const ProductDetailsModal = () => {
+      const { selectedProduct } = useSelector(s => s.products);
+      const dispatch = useDispatch();
+      if (!selectedProduct) return null;
+      return (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg shadow-lg w-11/12 max-w-md">
+            <h2 className="text-2xl font-bold mb-4">{selectedProduct.title}</h2>
+            <img src={selectedProduct.thumbnail} alt={selectedProduct.title} className="w-full h-48 object-cover mb-4 rounded" />
+            <p className="text-gray-700 mb-2">Price: ${selectedProduct.price.toFixed(2)}</p>
+            <p className="text-gray-700 mb-4">Description: {selectedProduct.description || 'No description available'}</p>
+            <button onClick={() => dispatch(setSelectedProduct(null))} className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600">
+              Close
+            </button>
+          </div>
         </div>
       );
     };
@@ -78,31 +100,43 @@
       const items = useSelector(s => s.cart.items);
       const dispatch = useDispatch();
       const [show, setShow] = useState(false);
+      const total = items.reduce((sum, i) => sum + i.price * i.quantity, 0).toFixed(2);
       return (
         <>
-          <button onClick={() => setShow(!show)}
-            className="fixed top-4 right-4 bg-blue-500 text-white px-4 py-2 rounded-full shadow">
+          <button onClick={() => setShow(!show)} className="fixed top-4 right-4 bg-blue-500 text-white px-4 py-2 rounded-full shadow hover:bg-blue-600">
             Cart ({items.reduce((t, i) => t + i.quantity, 0)})
           </button>
           {show && (
-            <div className="fixed top-16 right-4 bg-white border shadow p-4 rounded w-80 max-h-96 overflow-y-auto z-50">
+            <div className="fixed top-16 right-4 bg-white border shadow-lg p-4 rounded w-80 max-h-96 overflow-y-auto z-50">
               <h2 className="text-xl font-bold mb-2">Cart Items</h2>
-              {items.length === 0 ? <p className="text-gray-600">Cart is empty.</p> :
-                items.map(i => (
-                  <div key={i.id} className="flex justify-between items-center mb-2">
-                    <span>{i.title} x {i.quantity}</span>
-                    <button onClick={() => dispatch(remove(i.id))} className="text-red-500 hover:underline">Remove</button>
-                  </div>
-                ))}
+              {items.length === 0 ? (
+                <p className="text-gray-600">Cart is empty.</p>
+              ) : (
+                <>
+                  {items.map(i => (
+                    <div key={i.id} className="flex justify-between items-center mb-2 border-b pb-2">
+                      <span>{i.title} x {i.quantity}</span>
+                      <button onClick={() => dispatch(remove(i.id))} className="text-red-500 hover:text-red-700">Remove</button>
+                    </div>
+                  ))}
+                  <div className="mt-4 font-bold">Total: ${total}</div>
+                </>
+              )}
             </div>
           )}
         </>
       );
     };
 
+    const LoadingSpinner = () => (
+      <div className="flex justify-center items-center">
+        <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+
     const App = () => {
       const dispatch = useDispatch();
-      const { filtered, loading, error } = useSelector(s => s.products);
+      const { filtered, loading, error, selectedProduct } = useSelector(s => s.products);
       const [query, setQuery] = useState('');
 
       useEffect(() => {
@@ -120,20 +154,36 @@
         fetch();
       }, [dispatch]);
 
+      const handleSearch = (e) => {
+        setQuery(e.target.value);
+        dispatch(filter(e.target.value));
+      };
+
       return (
         <div className="container mx-auto p-4 bg-gray-100 min-h-screen">
-          <h1 className="text-3xl font-bold text-center mb-6">Product Store</h1>
+          <h1 className="text-3xl font-bold text-center mb-6 text-gray-800">Product Store</h1>
           <CartModal />
           <div className="mb-4 max-w-md mx-auto">
-            <input type="text" value={query} onChange={e => { setQuery(e.target.value); dispatch(filter(e.target.value)); }}
-              placeholder="Search products..." className="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <input
+              type="text"
+              value={query}
+              onChange={handleSearch}
+              placeholder="Search products..."
+              className="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
           </div>
-          {loading && <p className="text-center text-gray-600">Loading...</p>}
+          {loading && (
+            <div className="text-center">
+              <LoadingSpinner />
+              <p className="text-gray-600 mt-2">Loading products...</p>
+            </div>
+          )}
           {error && <p className="text-center text-red-500">Error: {error}</p>}
           {!loading && filtered.length === 0 && !error && <p className="text-center text-gray-600">No products found.</p>}
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
             {filtered.map(p => <ProductCard key={p.id} product={p} />)}
           </div>
+          {selectedProduct && <ProductDetailsModal />}
         </div>
       );
     };
