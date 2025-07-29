@@ -144,15 +144,8 @@
         const fetchProducts = async () => {
           dispatch(setLoading(true));
           try {
-            const res = await axios.get('https://jsonplaceholder.typicode.com/posts'); // Mock API
-            const products = res.data.slice(0, 10).map((post, index) => ({
-              id: index + 1,
-              title: post.title,
-              thumbnail: `https://via.placeholder.com/150?text=Product+${index + 1}`,
-              price: (Math.random() * 100 + 10).toFixed(2),
-              description: post.body.substring(0, 50) + '...'
-            }));
-            dispatch(setProducts(products));
+            const res = await axios.get('https://dummyjson.com/products');
+            dispatch(setProducts(res.data.products));
             dispatch(setLastUpdate(new Date().toLocaleTimeString()));
           } catch (e) {
             dispatch(setError(e.message));
@@ -205,4 +198,3 @@
   </script>
 </body>
 </html>
-  
