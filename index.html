@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Real-Time Add to Cart App</title>
+  <title>Smooth Add to Cart App</title>
   <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet" />
   <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.development.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.development.js"></script>
@@ -62,7 +62,7 @@
       };
       const handleViewDetails = () => dispatch(setSelectedProduct(product));
       return (
-        <div className="border rounded-lg p-4 bg-white shadow hover:shadow-lg flex flex-col items-center">
+        <div className="border rounded-lg p-4 bg-white shadow hover:shadow-lg flex flex-col items-center transition-opacity duration-300">
           <img src={product.thumbnail} alt={product.title} className="w-32 h-32 object-cover mb-2 rounded" />
           <h3 className="text-lg font-semibold text-center">{product.title}</h3>
           <p className="text-gray-600">${product.price.toFixed(2)}</p>
@@ -137,16 +137,21 @@
 
     const App = () => {
       const dispatch = useDispatch();
-      const { filtered, loading, error, lastUpdate } = useSelector(s => s.products);
+      const { filtered, loading, error, lastUpdate, items } = useSelector(s => s.products);
       const [query, setQuery] = useState('');
+      const [prevItems, setPrevItems] = useState([]);
 
       useEffect(() => {
         const fetchProducts = async () => {
           dispatch(setLoading(true));
           try {
             const res = await axios.get('https://dummyjson.com/products');
-            dispatch(setProducts(res.data.products));
-            dispatch(setLastUpdate(new Date().toLocaleTimeString()));
+            const newProducts = res.data.products;
+            if (JSON.stringify(newProducts) !== JSON.stringify(prevItems)) {
+              dispatch(setProducts(newProducts));
+              setPrevItems(newProducts);
+              dispatch(setLastUpdate(new Date().toLocaleTimeString()));
+            }
           } catch (e) {
             dispatch(setError(e.message));
           } finally {
@@ -155,9 +160,9 @@
         };
 
         fetchProducts();
-        const interval = setInterval(fetchProducts, 5000); // Poll every 5 seconds
-        return () => clearInterval(interval); // Cleanup on unmount
-      }, [dispatch]);
+        const interval = setInterval(fetchProducts, 5000);
+        return () => clearInterval(interval);
+      }, [dispatch, prevItems]);
 
       const handleSearch = (e) => {
         setQuery(e.target.value);
