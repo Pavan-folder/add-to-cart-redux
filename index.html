@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Smooth Add to Cart App</title>
+  <title>Enhanced Smooth Add to Cart App</title>
   <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet" />
   <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.development.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.development.js"></script>
@@ -21,14 +21,15 @@
 
     const productsSlice = createSlice({
       name: 'products',
-      initialState: { items: [], filtered: [], loading: false, error: null, selectedProduct: null, lastUpdate: null },
+      initialState: { items: [], filtered: [], loading: false, error: null, selectedProduct: null, lastUpdate: null, realTimeEnabled: true },
       reducers: {
         setProducts: (s, a) => { s.items = a.payload; s.filtered = a.payload; },
         setLoading: (s, a) => { s.loading = a.payload; },
         setError: (s, a) => { s.error = a.payload; },
         filter: (s, a) => { s.filtered = s.items.filter(p => p.title.toLowerCase().includes(a.payload.toLowerCase())); },
         setSelectedProduct: (s, a) => { s.selectedProduct = a.payload; },
-        setLastUpdate: (s, a) => { s.lastUpdate = a.payload; }
+        setLastUpdate: (s, a) => { s.lastUpdate = a.payload; },
+        toggleRealTime: (s) => { s.realTimeEnabled = !s.realTimeEnabled; }
       }
     });
 
@@ -51,7 +52,7 @@
     });
 
     const store = configureStore({ reducer: { products: productsSlice.reducer, cart: cartSlice.reducer } });
-    const { setProducts, setLoading, setError, filter, setSelectedProduct, setLastUpdate } = productsSlice.actions;
+    const { setProducts, setLoading, setError, filter, setSelectedProduct, setLastUpdate, toggleRealTime } = productsSlice.actions;
     const { add, remove } = cartSlice.actions;
 
     const ProductCard = ({ product }) => {
@@ -62,7 +63,7 @@
       };
       const handleViewDetails = () => dispatch(setSelectedProduct(product));
       return (
-        <div className="border rounded-lg p-4 bg-white shadow hover:shadow-lg flex flex-col items-center transition-opacity duration-300">
+        <div className="border rounded-lg p-4 bg-white shadow hover:shadow-lg flex flex-col items-center transition-opacity duration-500 ease-in-out">
           <img src={product.thumbnail} alt={product.title} className="w-32 h-32 object-cover mb-2 rounded" />
           <h3 className="text-lg font-semibold text-center">{product.title}</h3>
           <p className="text-gray-600">${product.price.toFixed(2)}</p>
@@ -135,14 +136,30 @@
       </div>
     );
 
+    const RealTimeToggle = () => {
+      const dispatch = useDispatch();
+      const { realTimeEnabled } = useSelector(s => s.products);
+      return (
+        <div className="text-center mt-4">
+          <button
+            onClick={() => dispatch(toggleRealTime())}
+            className="bg-gray-300 text-black px-4 py-2 rounded hover:bg-gray-400"
+          >
+            {realTimeEnabled ? 'Disable Real-Time Updates' : 'Enable Real-Time Updates'}
+          </button>
+        </div>
+      );
+    };
+
     const App = () => {
       const dispatch = useDispatch();
-      const { filtered, loading, error, lastUpdate, items } = useSelector(s => s.products);
+      const { filtered, loading, error, lastUpdate, items, realTimeEnabled } = useSelector(s => s.products);
       const [query, setQuery] = useState('');
       const [prevItems, setPrevItems] = useState([]);
 
       useEffect(() => {
         const fetchProducts = async () => {
+          if (!realTimeEnabled) return;
           dispatch(setLoading(true));
           try {
             const res = await axios.get('https://dummyjson.com/products');
@@ -160,9 +177,11 @@
         };
 
         fetchProducts();
-        const interval = setInterval(fetchProducts, 5000);
-        return () => clearInterval(interval);
-      }, [dispatch, prevItems]);
+        if (realTimeEnabled) {
+          const interval = setInterval(fetchProducts, 5000);
+          return () => clearInterval(interval);
+        }
+      }, [dispatch, prevItems, realTimeEnabled]);
 
       const handleSearch = (e) => {
         setQuery(e.target.value);
@@ -174,6 +193,7 @@
           <h1 className="text-3xl font-bold text-center mb-6 text-gray-800">Product Store</h1>
           <CartModal />
           {lastUpdate && <p className="text-center text-sm text-gray-500">Last updated: {lastUpdate}</p>}
+          <RealTimeToggle />
           <div className="mb-4 max-w-md mx-auto">
             <input
               type="text"
