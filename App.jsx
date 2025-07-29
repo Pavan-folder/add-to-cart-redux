@@ -1,5 +1,5 @@
 import React from "react";
-import ProductListPage from "../ProductListPage";
+import ProductListPage from "./ProductListPage";
 
 import Cart from "../Cart";
 
