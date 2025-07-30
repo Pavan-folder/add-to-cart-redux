@@ -1,5 +1,3 @@
-Here's an enhanced README.md for your project that includes links to the live demo and GitHub repository:
-
 ```markdown
 # ShopEase - Advanced E-Commerce Store
 
