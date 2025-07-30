@@ -99,4 +99,4 @@ This improved README features:
 6. License information
 7. Responsive design that looks good on GitHub and other markdown viewers
 
-The formatting makes it visually appealing while maintaining all the important technical details. You can add a screenshot by including an image file named `screenshot.png` in your repository.
+
